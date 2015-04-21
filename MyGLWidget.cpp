@@ -1,3 +1,4 @@
+#include "SceneMeshDBViewer.h"
 #include "MyGLWidget.h"
 #include "qopenglvertexarrayobject.h"
 #include "scene.capnp.h"
@@ -13,7 +14,6 @@
 
 MyGLWidget::MyGLWidget(QWidget *parent)
     : QOpenGLWidget(parent)
-    , dbFile("/tmp/shadermesh.capnp")
     , lon_(0)
     , lat_(0)
     , mousePressed_(false)
@@ -32,10 +32,13 @@ MyGLWidget::MyGLWidget(QWidget *parent)
 
     setFocusPolicy(Qt::ClickFocus);
 
-    dbFile.open(QFile::ReadOnly);
 
-    size = dbFile.size();
-    ptr = dbFile.map(0, size);
+//    format.setDepthBufferSize(16);
+//    setFormat(format);
+//    dbFile.open(QFile::ReadOnly);
+
+//    size = dbFile.size();
+//    ptr = dbFile.map(0, size);
 }
 
 MyGLWidget::~MyGLWidget()
@@ -47,6 +50,11 @@ void MyGLWidget::initializeGL()
 {
     QOpenGLWidget::initializeGL();
     QOpenGLFunctions::initializeOpenGLFunctions();
+
+    QSurfaceFormat f = format();
+    std::cout << "format " << f.redBufferSize() << " " << f.depthBufferSize() << std::endl;
+
+    navigatable_.reset(new SceneMeshDBViewer());
 
 //    vao.bind();
 //    glVertexPointer();t
@@ -61,124 +69,149 @@ void MyGLWidget::paintGL()
 
 
 
-    glClearColor(0,0,0,0);
-    glClear(GL_COLOR_BUFFER_BIT);
+    glDisable( GL_TEXTURE_2D );
+    glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
+    glFrontFace( GL_CW );
+    glCullFace( GL_BACK );
+    glEnable( GL_CULL_FACE );
+    glEnable( GL_DEPTH_TEST );
+    glDepthFunc( GL_LESS );
+    glDepthMask( GL_TRUE );
+    glClearDepth( 1.0 );
+    glClearColor( 0.0, 0.0, 0.0, 0.0 );
+
+    glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
 
     QMatrix4x4 mat;
 
-    mat.perspective(60, width() / float(height()), 0, 1000);
+
+    mat.perspective(60, width() / float(height()), .1, 100);
     mat.rotate(lat_, QVector3D(1, 0, 0));
     mat.rotate(lon_, QVector3D(0, 1, 0));
     mat.translate(QVector3D() - pos_);
 
     glLoadMatrixf(mat.data());
 
+//    glEnable(GL_LIGHTING);
+//    glEnable(GL_LIGHT0);
 
-    capnp::ReaderOptions ro;
-    ro.traversalLimitInWords = 1024 * 1024 * 1024;
-    capnp::FlatArrayMessageReader reader(kj::ArrayPtr<capnp::word>((capnp::word *) ptr, size / sizeof(capnp::word)), ro);
 
-    cp::scene::ShaderMeshDB::Reader dbReader = reader.getRoot<cp::scene::ShaderMeshDB>();
+////    GLfloat vpos[3] = {pos_.x(), pos_.y(), pos_.z()};
+////    glLightfv(GL_LIGHT0, GL_POSITION, vpos);
+////    GLfloat cyan[] = {0.f, .8f, .8f, 1.f};
+////    glMaterialfv(GL_FRONT, GL_DIFFUSE, cyan);
 
-    for( int i = 0; i < dbReader.getMeshes().size(); ++i )
+    if( navigatable_ )
     {
-        cp::scene::ShaderMesh::Reader shadermeshReader = dbReader.getMeshes()[i];
-
-        if( !shadermeshReader.hasLattice() )
-        {
-            continue;
-        }
-
-        capnp::List<cp::scene::ShaderMesh::Lattice::Mesh>::Reader meshlistReader = shadermeshReader.getLattice().getMeshes();
-        cp::scene::AttributeArrayInterleaved::Reader arrayReader = meshlistReader[0].getArray();
-        capnp::List<cp::scene::AttributeArrayInterleaved::Attribute>::Reader attributeList = arrayReader.getAttributes();
-
-        bool breakOuter = false;
-        for( int j = 0; j < attributeList.size(); ++j )
-        {
-            cp::scene::AttributeArrayInterleaved::Attribute::Reader attribute = attributeList[j];
-            if( attribute.getName() == "pos" )
-            {
-                uint32_t stride = arrayReader.getAttributeStride();
-                uint32_t offset = attribute.getOffset();
-                uint32_t numIndex = arrayReader.getNumIndex();
-
-
-                QOpenGLBuffer vertexBuffer;
-                QOpenGLBuffer indexBuffer;
-                {
-                    auto it = elementArrays_.find(i);
-
-                    if( it == elementArrays_.end() )
-                    {
-                        QOpenGLBuffer buffer(QOpenGLBuffer::VertexBuffer);
-                        buffer.create();
-                        buffer.bind();
-
-                        capnp::Data::Reader attributearrayReader = arrayReader.getAttributeArray();
-                        buffer.allocate(attributearrayReader.begin(), attributearrayReader.size());
-
-                        elementArrays_[i] = buffer;
-                        vertexBuffer = buffer;
-                    }
-                    else
-                    {
-                        vertexBuffer = it.value();
-                        vertexBuffer.bind();
-                    }
-                }
-
-                {
-                    auto it = indexArrays_.find(i);
-
-                    if( it == indexArrays_.end() )
-                    {
-                        QOpenGLBuffer buffer(QOpenGLBuffer::IndexBuffer);
-                        buffer.create();
-                        buffer.bind();
-
-                        capnp::Data::Reader indexarrayReader = arrayReader.getIndexArray();
-                        buffer.allocate(indexarrayReader.begin(), indexarrayReader.size());
-                        indexArrays_[i] = buffer;
-                    }
-                    else
-                    {
-                        indexBuffer = it.value();
-                        indexBuffer.bind();
-
-                    }
-
-                }
-
-                {
-                    glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
-                    glEnable(GL_CULL_FACE);
-                    glCullFace(GL_BACK);
-
-                    glEnableVertexAttribArray(0);
-                    glVertexAttribPointer(
-                       0,                  // attribute 0. No particular reason for 0, but must match the layout in the shader.
-                       3,                  // size
-                       GL_FLOAT,           // type
-                       GL_FALSE,           // normalized?
-                       stride,                  // stride
-                       (void*)offset            // array buffer offset
-                    );
-
-                    glDrawElements(GL_TRIANGLES, numIndex, GL_UNSIGNED_INT, (GLvoid*)nullptr);
-                    glDisableVertexAttribArray(0);
-
-                }
-
-                breakOuter = true;
-                break;
-            }
-        }
-        if( breakOuter )
-        {
-            //break;
-        }
+        navigatable_->draw();
     }
+
+//    capnp::ReaderOptions ro;
+//    ro.traversalLimitInWords = 1024 * 1024 * 1024;
+//    capnp::FlatArrayMessageReader reader(kj::ArrayPtr<capnp::word>((capnp::word *) ptr, size / sizeof(capnp::word)), ro);
+
+//    cp::scene::ShaderMeshDB::Reader dbReader = reader.getRoot<cp::scene::ShaderMeshDB>();
+
+//    for( int i = 0; i < dbReader.getMeshes().size(); ++i )
+//    {
+//        cp::scene::ShaderMesh::Reader shadermeshReader = dbReader.getMeshes()[i];
+
+//        if( !shadermeshReader.hasLattice() )
+//        {
+//            continue;
+//        }
+
+//        capnp::List<cp::scene::ShaderMesh::Lattice::Mesh>::Reader meshlistReader = shadermeshReader.getLattice().getMeshes();
+//        cp::scene::AttributeArrayInterleaved::Reader arrayReader = meshlistReader[0].getArray();
+//        capnp::List<cp::scene::AttributeArrayInterleaved::Attribute>::Reader attributeList = arrayReader.getAttributes();
+
+//        bool breakOuter = false;
+//        for( int j = 0; j < attributeList.size(); ++j )
+//        {
+//            cp::scene::AttributeArrayInterleaved::Attribute::Reader attribute = attributeList[j];
+//            if( attribute.getName() == "pos" )
+//            {
+//                uint32_t stride = arrayReader.getAttributeStride();
+//                uint32_t offset = attribute.getOffset();
+//                uint32_t numIndex = arrayReader.getNumIndex();
+
+
+//                QOpenGLBuffer vertexBuffer;
+//                QOpenGLBuffer indexBuffer;
+//                {
+//                    auto it = elementArrays_.find(i);
+
+//                    if( it == elementArrays_.end() )
+//                    {
+//                        QOpenGLBuffer buffer(QOpenGLBuffer::VertexBuffer);
+//                        buffer.create();
+//                        buffer.bind();
+
+//                        capnp::Data::Reader attributearrayReader = arrayReader.getAttributeArray();
+//                        buffer.allocate(attributearrayReader.begin(), attributearrayReader.size());
+
+//                        elementArrays_[i] = buffer;
+//                        vertexBuffer = buffer;
+//                    }
+//                    else
+//                    {
+//                        vertexBuffer = it.value();
+//                        vertexBuffer.bind();
+//                    }
+//                }
+
+//                {
+//                    auto it = indexArrays_.find(i);
+
+//                    if( it == indexArrays_.end() )
+//                    {
+//                        QOpenGLBuffer buffer(QOpenGLBuffer::IndexBuffer);
+//                        buffer.create();
+//                        buffer.bind();
+
+//                        capnp::Data::Reader indexarrayReader = arrayReader.getIndexArray();
+//                        buffer.allocate(indexarrayReader.begin(), indexarrayReader.size());
+//                        indexArrays_[i] = buffer;
+//                    }
+//                    else
+//                    {
+//                        indexBuffer = it.value();
+//                        indexBuffer.bind();
+
+//                    }
+
+//                }
+
+//                {
+//                    glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
+//                    glEnable(GL_CULL_FACE);
+//                    glCullFace(GL_BACK);
+
+//                    glEnableVertexAttribArray(0);
+//                    glVertexAttribPointer(
+//                       0,                  // attribute 0. No particular reason for 0, but must match the layout in the shader.
+//                       3,                  // size
+//                       GL_FLOAT,           // type
+//                       GL_FALSE,           // normalized?
+//                       stride,                  // stride
+//                       (void*)offset            // array buffer offset
+//                    );
+
+//                    glDrawElements(GL_TRIANGLES, numIndex, GL_UNSIGNED_INT, (GLvoid*)nullptr);
+//                    glDisableVertexAttribArray(0);
+
+//                }
+
+//                breakOuter = true;
+//                break;
+//            }
+//        }
+//        if( breakOuter )
+//        {
+//            //break;
+//        }
+//    }
 
 }
 

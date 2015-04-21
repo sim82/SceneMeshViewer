@@ -18,10 +18,13 @@ QMAKE_EXT_CPP += .c++
 SOURCES += main.cpp\
         scene.capnp.c++ \
         MainWindow.cpp \
-    MyGLWidget.cpp
+    MyGLWidget.cpp \
+    SceneMeshDBViewer.cpp
 
 HEADERS  += MainWindow.h \
         scene.capnp.h \
-    MyGLWidget.h
+    MyGLWidget.h \
+    GLNavigatable.h \
+    SceneMeshDBViewer.h
 
 FORMS    += MainWindow.ui

@@ -1,5 +1,8 @@
 #ifndef MYGLWIDGET_H
 #define MYGLWIDGET_H
+#include "GLNavigatable.h"
+
+
 #include <qopenglwidget.h>
 #include <qopenglfunctions.h>
 #include <qopenglbuffer.h>
@@ -8,7 +11,6 @@
 #include <QPointF>
 #include <QVector3D>
 #include <QFile>
-
 class MyGLWidget : public QOpenGLWidget, protected QOpenGLFunctions
 {
     Q_OBJECT
@@ -30,9 +32,7 @@ private slots:
     void on_moveTimer_timeout();
 private:
     //QOpenGl
-    QFile dbFile;
-    qint64 size;
-    uchar *ptr;
+
 
     bool &getKey(const Qt::Key &key);
     bool anyKeyPressed() const;
@@ -57,9 +57,8 @@ private:
     QVector3D pos_;
 
     bool stateChanged_;
+    QScopedPointer<GLNavigatable> navigatable_;
 
-    QMap<int, QOpenGLBuffer> elementArrays_;
-    QMap<int, QOpenGLBuffer> indexArrays_;
 };
 
 #endif // MYGLWIDGET_H
