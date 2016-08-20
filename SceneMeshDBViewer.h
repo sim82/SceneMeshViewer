@@ -1,14 +1,14 @@
 #ifndef SCENEMESHDBVIEWER_H
 #define SCENEMESHDBVIEWER_H
 #include "GLNavigatable.h"
-#include <QMap>
+#include "scene.capnp.h"
+
 #include <QFile>
+#include <QMap>
 #include <QOpenGLBuffer>
 #include <QOpenGLFunctions>
 
-class SceneMeshDBViewer
-        : public GLNavigatable
-        , protected QOpenGLFunctions
+class SceneMeshDBViewer : public GLNavigatable, protected QOpenGLFunctions
 {
 public:
     SceneMeshDBViewer();
@@ -17,6 +17,7 @@ public:
     void draw() override;
 
 private:
+    void drawElementsFallback(cp::scene::AttributeArrayInterleaved::Reader, uint attributeIndex);
 
     QFile dbFile;
     qint64 size;
